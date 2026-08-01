@@ -832,7 +832,13 @@ monotonic — widening the terminal never shrinks any column."
          (total-natural (+ (markdown-table-wrap--vsum natural-widths)
                            border-overhead)))
     (if (<= total-natural available-width)
-        (append natural-widths nil)
+        ;; Guarantee each column at least 1, matching the shrinking
+        ;; path's `max 1' floor below.  An all-empty column has a
+        ;; natural width of 0; returning 0 misaligns renderers (the
+        ;; separator draws a dash where the row draws nothing), since
+        ;; the separator's `max 1' and the row's raw width disagree.
+        (mapcar (lambda (w) (max 1 w))
+                (append natural-widths nil))
       (let* ((col-w (make-vector num-cols 0))
              ;; Precompute sqrt weights.
              (weights (vconcat
