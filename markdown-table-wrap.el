@@ -378,15 +378,36 @@ Uses `string-match' with a START parameter instead of repeated
               (setq span-end (1+ span-end)))
             (push (substring text pos span-end) tokens)
             (setq pos span-end))
-           ;; Plain text — up to whitespace or markup delimiter.
-           ((and (string-match "[^ \t*`~![]+" text pos)
-                 (= (match-beginning 0) pos))
-            (push (match-string 0 text) tokens)
-            (setq pos (match-end 0)))
-           ;; Stray markup char — consume one to make progress.
+           ;; Plain text — consume until whitespace or a real span
+           ;; start.  A markup-opener char (* ` ~ ! [) that does NOT
+           ;; begin a recognized span (a lone `~`, a bare `[Zig]`
+           ;; with no `(url)`, a stray `*` or `!`) is kept as plain
+           ;; text rather than split into a 1-char token.  Splitting
+           ;; it made `markdown-table-wrap-cell' rejoin tokens with
+           ;; spaces and re-wrap, corrupting cells like `~68',
+           ;; `~36 hot', and `[raylib]'.  Since every span begins with
+           ;; one of those opener chars, we only need to re-check
+           ;; `span-re' when we encounter one; a real span embedded
+           ;; later in the run (e.g. `foo[bar](url)') still
+           ;; tokenizes as a span.
            (t
-            (push (substring text pos (1+ pos)) tokens)
-            (setq pos (1+ pos)))))))
+            (let ((start pos)
+                  (ch nil))
+              (while (and (< pos len)
+                          (progn (setq ch (aref text pos))
+                                 (and (not (memq ch '(?\s ?\t)))
+                                      (or (not (memq ch '(?* ?\` ?~ ?! ?\[)))
+                                          (not (and (string-match span-re text pos)
+                                                    (= (match-beginning 0) pos)))))))
+                (setq pos (1+ pos)))
+              (if (> pos start)
+                  (push (substring text start pos) tokens)
+                ;; Cannot happen: span-end is nil (no span starts
+                ;; here) and the char is not whitespace, so the loop
+                ;; must consume at least one char.  Consume one to
+                ;; guarantee progress regardless.
+                (push (substring text pos (1+ pos)) tokens)
+                (setq pos (1+ pos)))))))))
     (nreverse tokens)))
 
 (defun markdown-table-wrap--markup-span-parts (token)

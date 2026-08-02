@@ -1860,5 +1860,115 @@ Currently expected to fail due to two known tokenizer limitations:
                                    tbl-idx width line-no orphan cell))
                   (should-not orphan))))))))))
 
+;;;; Tokenizer: Lone markup-opener characters
+
+;; A markup-opener character (* ` ~ ! [) that does NOT begin a
+;; recognized markup span must be kept as plain text, not split into
+;; a 1-character token.  Previously the tokenizer emitted every such
+;; char as its own token; `markdown-table-wrap-cell' then rejoined
+;; tokens with single spaces and re-wrapped, corrupting cells that
+;; contained a lone opener char:
+;;
+;;   `~68'      -> tokens `~' `68'      -> rejoined `~ 68'   (spurious space)
+;;   `~36 hot'  -> tokens `~' `36' `hot' -> `~ 36 hot' (8 wide)
+;;                 -> wrapped to `~ 36' / `hot' at width 7     (bad wrap)
+;;   `[raylib]' -> tokens `[' `raylib]'   -> `[ raylib]' (9 wide)
+;;                 -> wrapped to `[' / `raylib]' at width 8   (bad wrap)
+;;
+;; Real markup spans (`**bold**', `*it*', `~~strike~~', `` `code' ``,
+;; `[text](url)', `![alt](url)', `***bi***') are unaffected: they still
+;; tokenize as single span tokens.  A real span embedded later in a
+;; plain run (e.g. `foo[bar](url)') still tokenizes as a span.
+
+(ert-deftest markdown-table-wrap-test-tokenize-lone-tilde-no-split ()
+  "A lone `~' (not `~~') stays attached to adjacent text.
+`~68' is one token, not two (`~' and `68').  Without this fix the
+tokenizer emitted `~' as a 1-char token, so `markdown-table-wrap-cell'
+rejoined with a space, rendering `~ 68' (spurious space)."
+  (should (equal (markdown-table-wrap--tokenize-cell-text "~68")
+                 '("~68"))))
+
+(ert-deftest markdown-table-wrap-test-tokenize-lone-bracket-no-split ()
+  "A bare `[label]' with no `(url)' stays one token.
+`[raylib]' is one token, not two (`[' and `raylib]').  Without this
+fix the split made `markdown-table-wrap-cell' rejoin to `[ raylib]'
+(9 wide) and wrap to `[' / `raylib]' at width 8 — a bracketed label
+torn across two lines."
+  (should (equal (markdown-table-wrap--tokenize-cell-text "[raylib]")
+                 '("[raylib]"))))
+
+(ert-deftest markdown-table-wrap-test-tokenize-lone-tilde-multiword ()
+  "A lone `~' in multi-word text splits only on whitespace.
+`~36 hot' tokenizes to `~36' and `hot', NOT to three tokens `~' `36'
+`hot'.  The buggy 3-token form rejoined to `~ 36 hot' (8 wide) and
+wrapped to `~ 36' / `hot' at width 7, even though the source cell
+`~36 hot' (7 wide) fits on one line."
+  (should (equal (markdown-table-wrap--tokenize-cell-text "~36 hot")
+                 '("~36" "hot"))))
+
+(ert-deftest markdown-table-wrap-test-tokenize-lone-star-no-split ()
+  "A lone `*' (not `**' or `*italic*') stays in the plain run.
+`5*3=15', `C++', and `a~b' are single tokens.  Without this fix the
+`*' (or `~') broke the plain run; e.g. `5*3=15' would split at `*'."
+  (should (equal (markdown-table-wrap--tokenize-cell-text "5*3=15")
+                 '("5*3=15")))
+  (should (equal (markdown-table-wrap--tokenize-cell-text "C++")
+                 '("C++")))
+  (should (equal (markdown-table-wrap--tokenize-cell-text "a~b")
+                 '("a~b"))))
+
+(ert-deftest markdown-table-wrap-test-tokenize-lone-bang-no-split ()
+  "A lone `!' (not `![alt](url)') stays in the plain run.
+`wow! neat' splits on whitespace only: `wow!' and `neat', not three
+tokens `wow' `!' `neat'."
+  (should (equal (markdown-table-wrap--tokenize-cell-text "wow! neat")
+                 '("wow!" "neat"))))
+
+(ert-deftest markdown-table-wrap-test-tokenize-real-span-after-plain ()
+  "A real span embedded in a plain run still tokenizes as a span.
+`foo[bar](url)' tokenizes to `foo' and `[bar](url)'.  The plain run
+`foo' stops at `[' because `[' begins a recognized link span; the
+link is its own token.  This guards against the fix over-capturing
+opener chars and swallowing real spans into plain text."
+  (should (equal (markdown-table-wrap--tokenize-cell-text "foo[bar](url)")
+                 '("foo" "[bar](url)"))))
+
+(ert-deftest markdown-table-wrap-test-tokenize-real-spans-unaffected ()
+  "Recognized markup spans still tokenize as single tokens.
+Regression guard: the lone-opener fix must not collapse real spans
+into plain text.  `**bold**', `*it*', `~~strike~~', `code',
+`[t](u)', `![a](u)', `***bi***', and `*a **b** c*' all stay intact."
+  (dolist (cell '("**bold**" "*it*" "~~strike~~" "`code`"
+                  "`` double ``" "[t](u)" "![a](u)" "***bi***"
+                  "*a **b** c*"))
+    (should (equal (markdown-table-wrap--tokenize-cell-text cell)
+                   (list cell)))))
+
+;;;; End-to-end: lone-opener cells render without spurious wraps/spaces
+
+(ert-deftest markdown-table-wrap-test-cell-lone-tilde-no-spurious-space ()
+  "`~68' wraps to a single line with no inserted space.
+Before the fix: `markdown-table-wrap-cell' returned `~ 68' (with a
+spurious space).  After: it returns `~68' unchanged."
+  (should (equal (markdown-table-wrap-cell "~68" 7) '("~68"))))
+
+(ert-deftest markdown-table-wrap-test-cell-lone-bracket-no-spurious-split ()
+  "`[raylib]' fits in its natural width without splitting.
+Before the fix: the cell split across two lines (`[' then `raylib]').
+After: it returns `[raylib]' on a single line."
+  (should (equal (markdown-table-wrap-cell "[raylib]" 8) '("[raylib]"))))
+
+(ert-deftest markdown-table-wrap-test-cell-lone-tilde-multiword-fits ()
+  "`~36 hot' (7 wide) fits on one line at width 7.
+Before the fix the spurious-space rejoin made it 8 wide, so it wrapped
+to `~ 36' / `hot'.  After the fix the source cell fits unchanged."
+  (should (equal (markdown-table-wrap-cell "~36 hot" 7) '("~36 hot"))))
+
+(ert-deftest markdown-table-wrap-test-cell-lone-bracket-short-fits ()
+  "`[Zig]' (5 wide) fits on one line at width 8 with no inserted space.
+Before the fix: it returned `[ Zig]' (spurious space).  After: it
+returns `[Zig]' unchanged."
+  (should (equal (markdown-table-wrap-cell "[Zig]" 8) '("[Zig]"))))
+
 (provide 'markdown-table-wrap-test)
 ;;; markdown-table-wrap-test.el ends here
