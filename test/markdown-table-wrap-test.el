@@ -759,6 +759,34 @@ subtract marker overhead (which is invisible)."
     (should (>= (nth 0 widths) 1))
     (should (>= (nth 1 widths) 1))))
 
+(ert-deftest markdown-table-wrap-test-widths-empty-column-min-1 ()
+  "An all-empty column gets width at least 1, not 0.
+A column whose header and every cell are empty has natural width 0.
+Returning 0 misaligns renderers: the separator draws a dash (via its
+own `max 1' floor) where the row draws nothing, so every line after
+the separator drifts by one character per empty column.  The shrinking
+path already floors at 1; this test pins the fits path to the same
+contract (see `markdown-table-wrap-test-widths-fit-naturally')."
+  (let ((widths (markdown-table-wrap-compute-widths
+                 '("A" "" "B") '(("x" "" "y")) 20 3)))
+    (should (= (length widths) 3))
+    (should (>= (nth 0 widths) 1))
+    (should (>= (nth 1 widths) 1))
+    (should (>= (nth 2 widths) 1))
+    ;; The empty middle column is exactly 1, not 0.
+    (should (= (nth 1 widths) 1))))
+
+(ert-deftest markdown-table-wrap-test-empty-column-row-separator-align ()
+  "Rendering a table with an all-empty column keeps rows and separator aligned.
+Before the fix, the separator was one char wider than each row per
+empty column, so columns after an empty column drifted right."
+  (let* ((text "| a |   | b |\n|---|---|---|\n| 1 |   | 2 |\n")
+         (out (markdown-table-wrap text 40))
+         (lines (split-string out "\n" t "[ \t\r]*"))
+         (widths (mapcar #'length lines)))
+    ;; Every rendered line (header, separator, row) has the same width.
+    (should (cl-every (lambda (w) (= w (car widths))) widths))))
+
 (ert-deftest markdown-table-wrap-test-widths-shrinking ()
   "Columns shrink proportionally when table exceeds available width."
   (let ((widths (markdown-table-wrap-compute-widths
