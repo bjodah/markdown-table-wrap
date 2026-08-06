@@ -4,6 +4,11 @@ SHELL := /bin/bash
 EMACS ?= emacs
 BATCH = $(EMACS) --batch -Q -L .
 
+# Source files shipped as packages (each is its own Emacs package).
+SOURCES = markdown-table-wrap.el markdown-table-wrap-pretty.el
+# Test files (features, without the .el extension), each loaded with -l.
+TEST_FILES = markdown-table-wrap-test markdown-table-wrap-pretty-test
+
 # Test selector: run a subset of tests by ERT pattern
 # Example: make test SELECTOR=parse
 SELECTOR ?=
@@ -33,7 +38,7 @@ test:
 	@set -o pipefail; \
 	OUTPUT=$$(mktemp); \
 	$(BATCH) -L test \
-		-l markdown-table-wrap-test \
+		$(patsubst %,-l %,$(TEST_FILES)) \
 		$(if $(SELECTOR),--eval '(ert-run-tests-batch-and-exit "$(SELECTOR)")',-f ert-run-tests-batch-and-exit) \
 		>$$OUTPUT 2>&1; \
 	STATUS=$$?; \
@@ -50,18 +55,22 @@ compile:
 	@echo "=== Byte-compile ==="
 	@$(BATCH) \
 		--eval "(setq byte-compile-error-on-warn t)" \
-		-f batch-byte-compile markdown-table-wrap.el
+		-f batch-byte-compile $(SOURCES)
 
 lint: lint-checkdoc lint-package
 
 lint-checkdoc:
 	@echo "=== Checkdoc ==="
-	@OUTPUT=$$($(BATCH) \
-		--eval "(require 'checkdoc)" \
-		--eval "(setq sentence-end-double-space nil)" \
-		--eval "(checkdoc-file \"markdown-table-wrap.el\")" 2>&1); \
-	WARNINGS=$$(echo "$$OUTPUT" | grep -A1 "^Warning" | grep -v "^Warning\|^--$$"); \
-	if [ -n "$$WARNINGS" ]; then echo "$$WARNINGS"; exit 1; else echo "OK"; fi
+	@STATUS=0; \
+	for f in $(SOURCES); do \
+		OUTPUT=$$($(BATCH) \
+			--eval "(require 'checkdoc)" \
+			--eval "(setq sentence-end-double-space nil)" \
+			--eval "(checkdoc-file \"$$f\")" 2>&1); \
+		WARNINGS=$$(echo "$$OUTPUT" | grep -A1 "^Warning" | grep -v "^Warning\|^--$$"); \
+		if [ -n "$$WARNINGS" ]; then echo "$$WARNINGS"; STATUS=1; fi; \
+	done; \
+	if [ $$STATUS -eq 0 ]; then echo "OK"; else exit 1; fi
 
 lint-package:
 	@echo "=== Package-lint ==="
@@ -69,23 +78,27 @@ lint-package:
 		--eval "(require 'package)" \
 		--eval "(push '(\"melpa\" . \"https://melpa.org/packages/\") package-archives)" \
 		--eval "(package-initialize)" \
+		--eval "(package-refresh-contents)" \
 		--eval "(unless (package-installed-p 'package-lint) \
-		          (package-refresh-contents) \
 		          (package-install 'package-lint))" \
 		--eval "(require 'package-lint)" \
-		--eval "(setq package-lint-main-file \"markdown-table-wrap.el\")" \
-		-f package-lint-batch-and-exit markdown-table-wrap.el
+		-f package-lint-batch-and-exit $(SOURCES)
 
 check-parens:
 	@echo "=== Check Parens ==="
 	@OUTPUT=$$($(BATCH) \
-		--eval '(condition-case err \
-		          (with-current-buffer (find-file-noselect "markdown-table-wrap.el") \
-		            (check-parens) \
-		            (message "markdown-table-wrap.el OK")) \
-		          (user-error \
-		           (message "FAIL: %s" (error-message-string err)) \
-		           (kill-emacs 1)))' 2>&1); \
+		--eval '(let ((status 0)) \
+		          (mapc (lambda (f) \
+		                  (condition-case err \
+		                    (with-current-buffer (find-file-noselect f) \
+		                      (check-parens) \
+		                      (message "%s OK" f)) \
+		                    (user-error \
+		                     (message "FAIL: %s: %s" f (error-message-string err)) \
+		                     (setq status 1)))) \
+		                command-line-args-left) \
+		          (kill-emacs status))' \
+		$(SOURCES) 2>&1); \
 	echo "$$OUTPUT" | grep -E "OK$$|FAIL:"; \
 	echo "$$OUTPUT" | grep -q "FAIL:" && exit 1 || true
 
