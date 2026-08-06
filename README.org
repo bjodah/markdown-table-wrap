@@ -8,6 +8,13 @@
 Word-wrap GFM (GitHub Flavored Markdown) pipe tables to fit a
 given character width.  Inline markup survives wrapping.
 
+This repository also ships an OPTIONAL display companion,
+=markdown-table-wrap-pretty= (documented below), which renders tables
+as a wrapped, box-drawing view on top of the canonical raw text (like
+=org-latex-preview= for tables) and toggles between that view and the
+editable source.  It is a separate package and changes nothing unless
+you load it.
+
 #+begin_example
 | Feature   | Status | Notes                         |
 |-----------|--------|-------------------------------|
@@ -149,6 +156,82 @@ Parse and measure once, render at each width:
 - Unicode-aware (CJK, combining marks, VS16 emoji)
 - Pure Elisp, no dependencies
 
+* Optional: pretty display of pipe tables
+
+=markdown-table-wrap-pretty= is a separate, opt-in package shipped in
+this repository.  It renders markdown and org pipe tables as a wrapped,
+Unicode box-drawing "pretty" view ON TOP OF the canonical raw table
+text, and toggles between that view and the raw source in place — the
+table analogue of =org-latex-preview= or inline image previews.
+
+** Why display-only
+
+The buffer text is always the canonical raw pipe table; nothing is
+rewritten.  =markdown-table-wrap= wraps a long cell into multiple
+=| ... |= rows, but pipe-table syntax has no row-spanning, so a real
+renderer (cmark-gfm, pandoc, GitHub, org HTML export) would see those
+as independent data rows.  Mutating the buffer looks right in Emacs but
+is semantically broken the moment the text leaves Emacs.
+=markdown-table-wrap-pretty= keeps the buffer canonical — export,
+copy, share, and push always see a real table — and makes the pretty
+rendering a disposable display layer.
+
+** Commands
+
+| Command | Action |
+|---|---|
+| =markdown-table-wrap-pretty-toggle= | Point-aware toggle: on a table toggles it; off-table toggles all; a region toggles tables in it; a prefix arg forces pretty or raw. |
+| =markdown-table-wrap-pretty-buffer= | Force pretty on every table in the buffer. |
+| =markdown-table-wrap-pretty-region= | Force pretty on every table in the region. |
+| =markdown-table-wrap-pretty-mode= | Buffer-local minor mode: wires the resize re-render hook and optional default-pretty per major mode. |
+
+Editing a pretty table auto-reveals the raw source (via
+=modification-hooks=, the =org-latex-preview= pattern — not
+=read-only=, which would break =undo=), and toggling back re-renders
+fresh from the canonical source.
+
+** Customization
+
+| Option | Default | Meaning |
+|---|---|---|
+| =markdown-table-wrap-pretty-prettify= | =t= | Unicode box-drawing borders; =nil= uses plain ASCII pipes. |
+| =markdown-table-wrap-pretty-auto-rewrap-on-resize= | =t= | Re-render pretty tables on window resize (lossless). |
+| =markdown-table-wrap-pretty-rewrap-idle-delay= | =0.3= | Seconds to debounce resize re-render (=0= is immediate). |
+| =markdown-table-wrap-pretty-default-on-major-modes= | =nil= | Modes where tables start pretty when the minor mode is on. |
+
+** Installation and keys
+
+Load the package (it depends on =markdown-table-wrap=):
+
+#+begin_src elisp
+(require 'markdown-table-wrap-pretty)
+#+end_src
+
+The package ships no default key.  A consistent cross-mode choice is
+=C-c C-x C-k=:
+
+#+begin_src elisp
+(define-key markdown-mode-map (kbd "C-c C-x C-k")
+            #'markdown-table-wrap-pretty-toggle)
+(define-key org-mode-map (kbd "C-c C-x C-k")
+            #'markdown-table-wrap-pretty-toggle)
+#+end_src
+
+Or, with =use-package=, turn it on per major mode:
+
+#+begin_src elisp
+(use-package markdown-table-wrap-pretty
+  :after (markdown-mode org)
+  :hook (markdown-mode . markdown-table-wrap-pretty-mode)
+  :hook (org-mode      . markdown-table-wrap-pretty-mode))
+#+end_src
+
+Detection is universal and line-based, code-fence guarded, with no
+tree-sitter dependency, so it works in =markdown-mode=, =gfm-mode=,
+=md-ts-mode=, and =org-mode=.  Org =|---+---|= separators and width
+cookies are normalized for rendering only; the raw buffer keeps them.
+=#+TBLFM:= formula lines stay visible and untouched while pretty.
+
 * API
 
 ** Primary functions
@@ -180,8 +263,11 @@ The package also exposes =markdown-table-wrap-parse=,
 and =markdown-table-wrap-inside-code-fence-p=.  See their docstrings
 for details.
 
-All public functions are pure (except =inside-code-fence-p=).  No
-=defcustom= is defined; configuration is passed as arguments.
+For the =markdown-table-wrap= engine, all public functions are pure
+(except =inside-code-fence-p=).  No =defcustom= is defined;
+configuration is passed as arguments.  (The optional
+=markdown-table-wrap-pretty= display layer is a separate package with
+its own =defcustom=s; see above.)
 
 * License
 
