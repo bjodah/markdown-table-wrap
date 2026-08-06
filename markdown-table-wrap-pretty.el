@@ -4,8 +4,6 @@
 
 ;; Author: SayreBlades
 ;; URL: https://github.com/dnouri/markdown-table-wrap
-;; Version: 0.1.0
-;; Package-Requires: ((emacs "28.1") (markdown-table-wrap "0.2.0"))
 ;; Keywords: convenience, wp, markdown, org, tables
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
@@ -250,7 +248,7 @@ Accept both GFM (`|---|---|') and org (`|---+---|') separators."
    ((derived-mode-p 'org-mode)
     (and (fboundp 'org-in-src-block-p)
          (save-excursion (goto-char pos) (org-in-src-block-p))))
-   ((or (derived-mode-p 'markdown-mode) (eq major-mode 'md-ts-mode))
+   ((derived-mode-p 'markdown-mode 'md-ts-mode)
     (markdown-table-wrap-inside-code-fence-p pos))
    (t nil)))
 

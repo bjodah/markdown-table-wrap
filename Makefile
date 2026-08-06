@@ -82,6 +82,7 @@ lint-package:
 		--eval "(unless (package-installed-p 'package-lint) \
 		          (package-install 'package-lint))" \
 		--eval "(require 'package-lint)" \
+		--eval "(setq package-lint-main-file \"markdown-table-wrap.el\")" \
 		-f package-lint-batch-and-exit $(SOURCES)
 
 check-parens:
