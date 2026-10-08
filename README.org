@@ -195,9 +195,16 @@ fresh from the canonical source.
 | Option | Default | Meaning |
 |---|---|---|
 | =markdown-table-wrap-pretty-prettify= | =t= | Unicode box-drawing borders; =nil= uses plain ASCII pipes. |
+| =markdown-table-wrap-pretty-stripe-rows= | =t= | Tint every second data row with =markdown-table-wrap-pretty-stripe-face=; =nil= disables. |
 | =markdown-table-wrap-pretty-auto-rewrap-on-resize= | =t= | Re-render pretty tables on window resize (lossless). |
 | =markdown-table-wrap-pretty-rewrap-idle-delay= | =0.3= | Seconds to debounce resize re-render (=0= is immediate). |
 | =markdown-table-wrap-pretty-default-on-major-modes= | =nil= | Modes where tables start pretty when the minor mode is on. |
+
+The stripe face (=markdown-table-wrap-pretty-stripe-face=, inherits
+=hl-line= so it follows your theme) only sets the background, so
+inline styling (bold, links, code) stays visible on top.  Customize
+its =:background= for a stronger or subtler tint, or set
+=markdown-table-wrap-pretty-stripe-rows= to =nil= for plain rendering.
 
 ** Installation and keys
 

@@ -148,6 +148,24 @@ to match a surrounding `markdown-mode' buffer, inherit
 `markdown-table-wrap-pretty-render-inline-spans'."
   :group 'markdown-table-wrap-pretty)
 
+(defcustom markdown-table-wrap-pretty-stripe-rows t
+  "Non-nil means tint every second data row in pretty tables.
+This is a zebra-stripe readability aid: the header and separator
+never get the tint, the first data row is untinted, the second is
+tinted, and so on.  All wrapped continuation lines of a tinted
+logical row share the same tint.  Set to nil for plain rendering."
+  :type 'boolean
+  :group 'markdown-table-wrap-pretty)
+
+(defface markdown-table-wrap-pretty-stripe-face
+  '((t :inherit hl-line :extend t))
+  "Face used for the background tint on every second data row.
+Only the background should be set here so inline faces (bold,
+link, code, etc.) stay visible on top.  Inherits `hl-line' so the
+tint follows the current theme; customize the background for a
+stronger or subtler stripe."
+  :group 'markdown-table-wrap-pretty)
+
 ;;;; Buffer-Local State
 
 ;; Forward declaration: `markdown-table-wrap-pretty-mode' is defined by
@@ -525,6 +543,35 @@ box-drawing rule; otherwise emit standard markdown separator syntax."
 
 ;;;; Display Groups (per raw line)
 
+(defun markdown-table-wrap-pretty--stripe-string (str)
+  "Return STR with `markdown-table-wrap-pretty-stripe-face' added.
+Existing text properties (bold, link, code faces, help-echo, etc.)
+are preserved: the stripe face is appended at low priority so it
+only contributes attributes (normally just the background) not
+already set by inline-span faces."
+  (add-face-text-property 0 (length str)
+                           'markdown-table-wrap-pretty-stripe-face
+                           t str)
+  str)
+
+(defun markdown-table-wrap-pretty--maybe-stripe-groups (groups)
+  "Tint every second data row in GROUPS when striping is enabled.
+GROUPS is a display-group list as built by
+`markdown-table-wrap-pretty--table-display-groups': element 0 is
+the header, element 1 the separator, elements 2.. are data rows.
+The header and separator are never tinted; data rows with odd
+data index (second, fourth, ...) get
+`markdown-table-wrap-pretty-stripe-face' on every visual line.
+Return GROUPS (modified in place for the tinted lines)."
+  (when markdown-table-wrap-pretty-stripe-rows
+    (cl-loop for cell on (nthcdr 2 groups)
+             for data-idx from 0
+             when (cl-oddp data-idx)
+             do (setf (car cell)
+                      (mapcar #'markdown-table-wrap-pretty--stripe-string
+                              (car cell)))))
+  groups)
+
 (defun markdown-table-wrap-pretty--split-line-prefix (line)
   "Split table LINE into (PREFIX . BARE).
 PREFIX is everything before the first `|'; BARE starts at the first `|'."
@@ -581,17 +628,18 @@ continuation line.  Plain tables take a fast path."
                              (markdown-table-wrap-pretty--render-row-lines
                               row col-widths aligns))
                            disp-rows)))
-        (if no-prefix
-            (append (list header-lines)
-                    (list (list separator-line))
-                    row-groups)
-          (append
-           (list (mapcar (lambda (l) (concat (car prefixes) l)) header-lines))
-           (list (list (concat (nth 1 prefixes) separator-line)))
-           (cl-mapcar (lambda (prefix row-lines)
-                        (mapcar (lambda (l) (concat prefix l)) row-lines))
-                      (nthcdr 2 prefixes)
-                      row-groups)))))))
+        (markdown-table-wrap-pretty--maybe-stripe-groups
+         (if no-prefix
+             (append (list header-lines)
+                     (list (list separator-line))
+                     row-groups)
+           (append
+            (list (mapcar (lambda (l) (concat (car prefixes) l)) header-lines))
+            (list (list (concat (nth 1 prefixes) separator-line)))
+            (cl-mapcar (lambda (prefix row-lines)
+                         (mapcar (lambda (l) (concat prefix l)) row-lines))
+                       (nthcdr 2 prefixes)
+                       row-groups))))))))
 
 ;;;; Overlay Management
 
